@@ -1,0 +1,3 @@
+[submodule "ares_br_urdf"]
+	path = ares_br_urdf
+	url = https://github.com/ARES-Algorithm/ares_br_urdf.git
