@@ -1,7 +1,8 @@
 # ares_2027sim
 
-`ares_2027sim` 是面向 ABU Robocon 2027 比赛的独立 ROS 2 Jazzy 仿真包，
-使用 Gazebo Harmonic 构建比赛场地、物理环境和后续机器人仿真。
+`ares_2027sim` 是面向 ABU Robocon 2027 比赛的 ROS 2 / Gazebo 仿真包，
+用于构建比赛场地、物理环境和机器人仿真。ROS 2 发行版应根据操作系统选择；
+当前代码已在 Humble / Gazebo Fortress 组合下验证。
 
 ![场地](img/field.png)
 
@@ -41,41 +42,128 @@ Earth Block、Sky Block 和 Mustika 都是带质量、惯量、摩擦与碰撞�
 单位：米
 ```
 
+## 环境与版本选择
+
+场地生成脚本和原始 URDF 不依赖特定 ROS 2 发行版；ROS 节点使用标准的
+`launch_ros`、`robot_state_publisher` 和消息接口。不过，完整仿真还依赖 Gazebo
+及其 `ros_gz` 桥接，必须一起选择兼容的版本。
+
+| 操作系统 | ROS 2 发行版 | 默认配套 Gazebo | 本项目当前状态 |
+|---|---|---|---|
+| Ubuntu 22.04 | Humble | Fortress | 已完成构建、BR 生成及基础关节控制验证 |
+| Ubuntu 24.04 | Jazzy | Harmonic | 适合该系统，但当前代码尚需适配 Gazebo 接口并验证 |
+| 其他系统 / 发行版 | 按 ROS 2 官方支持平台选择 | 按官方兼容表选择 | 尚未验证 |
+
+参考 [ROS 2 Humble 安装说明](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html)、
+[ROS 2 Jazzy 安装说明](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html)
+和 [ROS 2 / Gazebo 兼容表](https://gazebosim.org/docs/latest/ros_installation/)。
+
+**当前不能仅替换发行版名称就让完整仿真在所有组合下运行。** 使用 Harmonic 等新版
+Gazebo 时，需要检查并适配：
+
+- `launch/ares_2027sim.launch.py` 中的 `ign gazebo` 启动命令、
+  `IGN_GAZEBO_RESOURCE_PATH` 和 `ignition.msgs.*` 桥接类型；
+- `scripts/prepare_br.py`、`scripts/generate_robocon_2027_world.py` 和生成的世界文件中
+  `ignition-gazebo-*` 插件文件名及 `ignition::gazebo::systems::*` 插件名称；
+- `test/test_br_model.py` 中的 `ign sdf` 验证命令。
+
+这些属于 Gazebo 版本适配。下面的命令以已验证的 Humble / Fortress 为例；
+其他组合应先完成对应适配，再执行构建和运行验证。
+
 ## 构建和启动
 
-项目的 Python、生成脚本、测试和 `colcon` 命令统一使用工作区根目录的 `.venv`。
-应先激活虚拟环境，再加载 ROS 2 环境。
-
-首次安装 Gazebo 与 ROS 2 桥接组件：
+以下假设仓库位于 `~/ros2_ws/src/ares_2027sim`，请按实际位置调整。先按官方说明安装
+适合系统的 ROS 2，然后安装配套组件：
 
 ```bash
+# 当前代码已验证的组合；其他发行版需先完成上面的 Gazebo 适配
+source /opt/ros/humble/setup.bash
 sudo apt update
-sudo apt install ros-jazzy-ros-gz
+sudo apt install "ros-${ROS_DISTRO}-ros-gz" "ros-${ROS_DISTRO}-robot-state-publisher"
 ```
 
-安装 Python 开发依赖并构建：
+Python 环境不要求固定名称。可以使用系统 Python 的虚拟环境，也可以使用已有 Conda
+环境；Python 主、次版本必须与安装的 ROS 2 Python 二进制包匹配
+（Ubuntu 22.04 / Humble 为 Python 3.10，Ubuntu 24.04 / Jazzy 为 Python 3.12）。
+本机验证使用的是 Conda `ares_algo_env`，它不是项目的强制依赖。
+
+下面使用虚拟环境；使用 Conda 时，将创建和激活虚拟环境的两行替换为自己的
+`conda activate <环境名>`，并在激活后重新加载对应的 ROS 2 环境。
 
 ```bash
-cd /home/gracekite/Documents/MyFiles/RC_Projects/AlgoWorkspace-27
-source .venv/bin/activate
-python -m pip install -r ares_2027sim/requirements-dev.txt
+cd ~/ros2_ws/src/ares_2027sim
+# 已克隆仓库后，拉取 BR 模型子模块
+git submodule update --init --recursive
 
-cd ares_2027sim
-source /opt/ros/jazzy/setup.bash
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+# ROS_DISTRO 来自前面 source 的 ROS 2 环境
+source "/opt/ros/${ROS_DISTRO}/setup.bash"
+python -m pip install -r requirements-dev.txt
+
 colcon build --symlink-install \
-  --cmake-args -DPython3_EXECUTABLE="$VIRTUAL_ENV/bin/python"
+  --cmake-args -DPython3_EXECUTABLE="$(command -v python)"
 source install/setup.bash
-ros2 launch ares_2027sim ares_2027sim.launch.py
+# 显式使用当前 Python 环境执行 ROS 2 CLI
+python "$(command -v ros2)" launch ares_2027sim ares_2027sim.launch.py
 ```
+
+## BR 模型（初步接入）
+
+![BR in Gazebo Fortress](artifacts/br_humble.png)
+
+启动默认生成 `br`，并发布 `/robot_description`、`/joint_states`、`/tf` 和 `/clock`。
+默认将 BR 的底盘几何中心放在红方内侧出发区中心 `(-4.35, -5.10)`，
+相对原始零朝向向左旋转 90°（yaw = `π/2`）。考虑 CAD 原点与底盘中心的偏移后，
+生成时的 CAD 原点位姿为 `(-4.058, -4.8032, 0.16)`；落地后原点高度约 0.129 m。
+可以通过 `br_x`、`br_y`、`br_z`、`br_yaw` 调整出生位姿。
+
+```bash
+# 无窗口运行；正常启动时省略 headless 参数
+python "$(command -v ros2)" launch ares_2027sim ares_2027sim.launch.py headless:=true
+# 仅场地，或启动后保持暂停
+python "$(command -v ros2)" launch ares_2027sim ares_2027sim.launch.py spawn_br:=false
+python "$(command -v ros2)" launch ares_2027sim ares_2027sim.launch.py paused:=true
+```
+
+原始模型保存在 Git 子模块 `ares_br_urdf`；新克隆项目后先执行
+`git submodule update --init --recursive`。`scripts/prepare_br.py` 在启动时生成仿真
+URDF，解析网格路径、使用圆柱车轮与包围盒碰撞体、让车轮连续旋转，并添加 Gazebo 原生
+关节控制插件。它不会改写子模块中的 CAD 文件。
+
+| 关节 | 机构 | ROS 命令话题（std_msgs/msg/Float64） |
+|---|---|---|
+| joint1–4 | 四角升降 | `/br/jointN/cmd_pos`，米 |
+| joint5–8 | 四轮转向 | `/br/jointN/cmd_pos`，弧度 |
+| joint9–12 | 四轮驱动 | `/br/jointN/cmd_vel`，弧度/秒 |
+| joint13–16 | 独立收放的爬楼腿 | `/br/jointN/cmd_pos`，弧度 |
+| joint17–30 | 双臂和夹持机构 | `/br/jointN/cmd_pos`，转动用弧度，移动用米 |
+| joint31 | 承重支腿 | `/br/joint31/cmd_pos`，弧度 |
+| joint32 | 支撑/锁止 joint31 | `/br/joint32/cmd_pos`，弧度 |
+
+例如，展开一条爬楼腿并收回：
+
+```bash
+ros2 topic pub --once /br/joint13/cmd_pos std_msgs/msg/Float64 '{data: 0.15}'
+ros2 topic pub --once /br/joint13/cmd_pos std_msgs/msg/Float64 '{data: 0.0}'
+```
+
+目前所有位置关节使用限速的理想伺服保持零位，四个车轮默认速度为零。命令应处于源
+URDF 的关节范围内；轮速命令会持续生效，需要显式发送零速停止。暂未实现车体级
+`cmd_vel`、电机力矩标定、真实抓取、传感器及爬楼动作状态机。
+`joint31` 和 `joint32` 分别可控，但尚未实现先展开后锁止的联动及物理锁止约束。
+碰撞包围盒会填实部分结构空隙，因此当前模型用于初步加载与接口验证，不能用于评估
+爬楼或抓取成功率。当前使用 5 ms 物理步长、DART/Bullet 碰撞检测和 PGS 求解器；
+本机带界面运行实测约 0.2 倍实时速度，仍需进一步优化。
 
 ## 复位 Mustika
 
 仿真运行时，在另一个已加载工作区环境的终端执行：
 
 ```bash
-cd /home/gracekite/Documents/MyFiles/RC_Projects/AlgoWorkspace-27/ares_2027sim
-source ../.venv/bin/activate
-source /opt/ros/jazzy/setup.bash
+cd ~/ros2_ws/src/ares_2027sim
+# 激活自己的 Python 环境，例如 source .venv/bin/activate 或 conda activate <环境名>
+# 新终端中先加载所选发行版，例如 source /opt/ros/humble/setup.bash
 source install/setup.bash
 ros2 run ares_2027sim reset_mustika.py
 ```
@@ -88,20 +176,19 @@ ros2 run ares_2027sim reset_mustika.py
 提交到项目中的 SDF 世界文件由参数化 Python 脚本生成。修改场地尺寸或颜色后执行：
 
 ```bash
-cd /home/gracekite/Documents/MyFiles/RC_Projects/AlgoWorkspace-27
-source .venv/bin/activate
-python ares_2027sim/scripts/generate_robocon_2027_world.py
+cd ~/ros2_ws/src/ares_2027sim
+# 使用已激活的 Python 环境
+python scripts/generate_robocon_2027_world.py
 ```
 
-生成结果位于 `ares_2027sim/worlds/robocon_2027.sdf`。
+生成结果位于仓库内的 `worlds/robocon_2027.sdf`。
 
 ## 测试
 
 ```bash
-cd /home/gracekite/Documents/MyFiles/RC_Projects/AlgoWorkspace-27
-source .venv/bin/activate
-source /opt/ros/jazzy/setup.bash
-python -m pytest ares_2027sim/test
+cd ~/ros2_ws/src/ares_2027sim
+# 使用已激活的 Python 环境，并加载所选 ROS 2 发行版
+python -m pytest test
 ```
 
 测试覆盖场地尺寸、区域坐标、红蓝镜像关系、台阶尺寸、Retry Zone、Building Spot、

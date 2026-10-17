@@ -4,6 +4,7 @@
 import argparse
 import subprocess
 import sys
+import shutil
 
 
 def main():
@@ -17,11 +18,12 @@ def main():
         'position: {x: 0.0, y: 4.225, z: 0.545}, '
         'orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}'
     )
+    fortress = shutil.which('ign') is not None
     command = [
-        'gz', 'service',
+        'ign' if fortress else 'gz', 'service',
         '-s', f'/world/{args.world}/set_pose',
-        '--reqtype', 'gz.msgs.Pose',
-        '--reptype', 'gz.msgs.Boolean',
+        '--reqtype', 'ignition.msgs.Pose' if fortress else 'gz.msgs.Pose',
+        '--reptype', 'ignition.msgs.Boolean' if fortress else 'gz.msgs.Boolean',
         '--timeout', str(args.timeout_ms),
         '--req', request,
     ]
@@ -31,7 +33,7 @@ def main():
             timeout=args.timeout_ms / 1000.0 + 2.0,
         )
     except FileNotFoundError:
-        print('找不到 gz 命令，请先安装并加载 Gazebo Harmonic 环境。', file=sys.stderr)
+        print('找不到 Gazebo 命令，请先安装 ros-humble-ros-gz。', file=sys.stderr)
         return 2
     except subprocess.TimeoutExpired:
         print('Mustika 复位请求超时，请确认仿真世界正在运行。', file=sys.stderr)

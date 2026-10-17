@@ -479,18 +479,26 @@ def add_sky_blocks(world):
 
 
 def build_world():
-    sdf = ET.Element('sdf', {'version': '1.9'})
+    sdf = ET.Element('sdf', {'version': '1.8'})
     world = sub(sdf, 'world', name='robocon_2027')
     sub(world, 'gravity', '0 0 -9.8')
+    physics = sub(world, 'physics', name='fortress_physics', type='ignored')
+    # 200 Hz is sufficient for initial low-speed joint and contact checks.
+    sub(physics, 'max_step_size', '0.005')
+    sub(physics, 'real_time_factor', '1')
+    dart = sub(physics, 'dart')
+    sub(dart, 'collision_detector', 'bullet')
+    solver = sub(dart, 'solver')
+    sub(solver, 'solver_type', 'pgs')
     sub(world, 'magnetic_field', '0.000006 0.000023 -0.000042')
     scene = sub(world, 'scene')
     sub(scene, 'ambient', '0.62 0.62 0.62 1')
     sub(scene, 'background', '0.82 0.84 0.87 1')
     sub(scene, 'shadows', 'true')
 
-    sub(world, 'plugin', name='gz::sim::systems::Physics', filename='gz-sim-physics-system')
-    sub(world, 'plugin', name='gz::sim::systems::UserCommands', filename='gz-sim-user-commands-system')
-    sub(world, 'plugin', name='gz::sim::systems::SceneBroadcaster', filename='gz-sim-scene-broadcaster-system')
+    sub(world, 'plugin', name='ignition::gazebo::systems::Physics', filename='ignition-gazebo-physics-system')
+    sub(world, 'plugin', name='ignition::gazebo::systems::UserCommands', filename='ignition-gazebo-user-commands-system')
+    sub(world, 'plugin', name='ignition::gazebo::systems::SceneBroadcaster', filename='ignition-gazebo-scene-broadcaster-system')
 
     light = sub(world, 'light', name='sun', type='directional')
     sub(light, 'pose', '0 0 10 0 0 0')
